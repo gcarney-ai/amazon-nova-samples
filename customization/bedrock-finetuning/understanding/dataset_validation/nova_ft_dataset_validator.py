@@ -130,10 +130,6 @@ class Source(BaseModel):
 
     s3Location: S3Location
 
-    @field_validator("s3Location", mode="after")
-    def validate_s3_with_context(cls, s3: S3Location, info: ValidationInfo):
-        return S3Location.model_validate(s3.model_dump(), context=info.context)
-
 
 class ImageContent(BaseModel):
     """Represents and validates image content with format and source."""
@@ -147,10 +143,6 @@ class ImageContent(BaseModel):
         if image_format.lower() not in IMAGE_FORMATS:
             raise ValueError(f"Invalid image format, supported formats are {IMAGE_FORMATS}")
         return image_format
-    
-    @field_validator("source", mode="after")
-    def validate_source_with_context(cls, src: Source, info: ValidationInfo):
-        return Source.model_validate(src.model_dump(), context=info.context)
 
 
 class VideoContent(BaseModel):
