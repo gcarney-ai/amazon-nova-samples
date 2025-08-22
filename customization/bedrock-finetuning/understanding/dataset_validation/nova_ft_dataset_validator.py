@@ -3,6 +3,8 @@ import json
 import re
 from enum import Enum
 from typing import Annotated, List, Optional, Union, cast
+import os
+import sys
 
 from pydantic import (
     BaseModel,
@@ -103,6 +105,7 @@ class S3Location(BaseModel):
     """Represents and validates an S3 URI location."""
 
     uri: str
+    bucketOwner: Optional[str] = None
 
     @field_validator("uri")
     def validate_format(cls, uri):
@@ -111,12 +114,25 @@ class S3Location(BaseModel):
             raise ValueError("Invalid S3 URI, must start with 's3://'")
         is_valid_path(uri.replace("s3://", ""))
         return uri
+    
+    @model_validator(mode="after")
+    def validate_bucket_owner_conditionally(cls, values: "S3Location", info: ValidationInfo):
+        context = info.context or {}
+        if context.get("model_name") == "pro" and context.get("task_type") == "sft":
+            if not values.bucketOwner:
+                raise ValueError("bucketOwner is required for SFT task with Pro model")
+        return values
+
 
 
 class Source(BaseModel):
     """Defines the source location for media content."""
 
     s3Location: S3Location
+
+    @field_validator("s3Location", mode="after")
+    def validate_s3_with_context(cls, s3: S3Location, info: ValidationInfo):
+        return S3Location.model_validate(s3.model_dump(), context=info.context)
 
 
 class ImageContent(BaseModel):
@@ -131,6 +147,10 @@ class ImageContent(BaseModel):
         if image_format.lower() not in IMAGE_FORMATS:
             raise ValueError(f"Invalid image format, supported formats are {IMAGE_FORMATS}")
         return image_format
+    
+    @field_validator("source", mode="after")
+    def validate_source_with_context(cls, src: Source, info: ValidationInfo):
+        return Source.model_validate(src.model_dump(), context=info.context)
 
 
 class VideoContent(BaseModel):
@@ -383,7 +403,7 @@ def validate_converse_dataset(args):
                 )
             else:
                 ConverseDatasetSample.model_validate(
-                    sample, context={"model_name": args.model_name}
+                    sample, context={"model_name": args.model_name, "task_type": args.task_type}
                 )
         except ValidationError as e:
             failed_samples_id_list.append(i)
@@ -496,6 +516,13 @@ if __name__ == "__main__":
     Takes input a jsonl file with samples in the Nova converse format:
     https://docs.aws.amazon.com/nova/latest/userguide/customize-fine-tune-prepare.html
     """
+
+    args = argparse.Namespace(
+        input_file="C:/Users/gcarney/Downloads/training (1).jsonl",
+        model_name="pro",
+        task_type="sft"
+    )
+
     parser = argparse.ArgumentParser(
         description=description, formatter_class=argparse.RawTextHelpFormatter
     )
@@ -522,5 +549,5 @@ if __name__ == "__main__":
         required=True,
         help="Choose a task type: sft, dpo",
     )
-    args = parser.parse_args()
+    # args = parser.parse_args()
     validate_converse_dataset(args)
